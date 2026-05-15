@@ -391,6 +391,16 @@ const ProfileEditForm: FunctionComponent<Props> = ({
               <Text size="sm">
                 Download subtitle file without format conversion
               </Text>
+              <Switch
+                label="Always run Whisper"
+                checked={form.values.alwaysUseWhisper ?? false}
+                {...form.getInputProps("alwaysUseWhisper")}
+              ></Switch>
+              <Text size="sm">
+                Always generate Whisper subtitles in addition to subtitles from
+                other providers. Saved as <code>.whisperai[-model].srt</code>.
+                Only applies to "Normal or hearing-impaired" subtitles.
+              </Text>
             </Stack>
           </Accordion.Item>
         </Accordion>

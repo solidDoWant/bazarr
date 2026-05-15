@@ -674,6 +674,12 @@ export const ProviderList: Readonly<ProviderInfo[]> = [
         defaultValue: false,
       },
       {
+        type: "text",
+        key: "model_name",
+        defaultValue: "",
+        name: "Model name (optional, e.g. large-v3, used in 'Always run Whisper' filenames)",
+      },
+      {
         type: "testbutton",
         key: "whisperai",
         name: "Test Connection button",

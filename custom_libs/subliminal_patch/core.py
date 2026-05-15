@@ -524,7 +524,8 @@ class SZProviderPool(ProviderPool):
         return True
 
     def download_best_subtitles(self, subtitles, video, languages, min_score=0, hearing_impaired=False, only_one=False,
-                                use_original_format=False, fallback_allowed=False):
+                                use_original_format=False, fallback_allowed=False, always_use_whisper=False,
+                                whisper_languages_to_skip=None):
         """Download the best matching subtitles.
 
         patch:
@@ -542,6 +543,9 @@ class SZProviderPool(ProviderPool):
         :param bool hearing_impaired: hearing impaired preference.
         :param bool only_one: download only one subtitle, not one per language.
         :param bool use_original_format: preserve original subtitles format
+        :param bool always_use_whisper: also run Whisper for every requested language regardless of other results
+        :param whisper_languages_to_skip: languages to exclude from the always-use-whisper pass
+        :type whisper_languages_to_skip: set of :class:`~babelfish.language.Language`
         :return: downloaded subtitles.
         :rtype: list of :class:`~subliminal.subtitle.Subtitle`
 
@@ -640,10 +644,10 @@ class SZProviderPool(ProviderPool):
         # 2. We are in a Bulk Task or Single Series search
         # 3. User enabled the Whisper fallback setting
         # 4. Whisper is actually in the active providers list
-        if (not downloaded_subtitles and 
-            fallback_allowed and 
+        if (not downloaded_subtitles and
+            fallback_allowed and
             'whisperai' in self.providers):
-            
+
             for subtitle, score, score_without_hash, matches, orig_matches in scored_subtitles:
                 if subtitle.provider_name == 'whisperai':
                     logger.info('BAZARR Bulk Task: Falling back to Whisper for %r', video.name)
@@ -652,6 +656,36 @@ class SZProviderPool(ProviderPool):
                         subtitle.score = score
                         downloaded_subtitles.append(subtitle)
                         break
+
+        # --- ALWAYS-RUN-WHISPER PASS ---
+        # When the user has set "Always run Whisper" on the language profile, transcribe every
+        # requested language regardless of the regular-provider results so the output can be
+        # compared side-by-side with human-translated subs. Files are saved with a provider tag
+        # in the filename so they do not collide. If Whisper is not enabled or the service is
+        # unreachable, fail silently rather than aborting the whole download.
+        if always_use_whisper and 'whisperai' in self.providers:
+            skip = whisper_languages_to_skip or set()
+            skip_basenames = {l.basename for l in skip}
+            whisper_targets = {l for l in languages if l.basename not in skip_basenames}
+            if whisper_targets:
+                try:
+                    whisper_listed = self['whisperai'].list_subtitles(video, whisper_targets)
+                except Exception:
+                    logger.exception('BAZARR Always-run Whisper: failed to list subtitles for %r', video.name)
+                    whisper_listed = []
+                for subtitle in whisper_listed:
+                    logger.info('BAZARR Always-run Whisper: transcribing %r for %r', subtitle.language, video.name)
+                    subtitle.use_original_format = use_original_format
+                    tags = ['whisperai']
+                    if getattr(subtitle, 'model_name', None):
+                        tags.append(subtitle.model_name)
+                    subtitle.subtitle_path_tags = tags
+                    if self.download_subtitle(subtitle):
+                        subtitle.score = 0
+                        downloaded_subtitles.append(subtitle)
+        elif always_use_whisper:
+            logger.debug('BAZARR Always-run Whisper is enabled on the profile but the Whisper provider is not '
+                         'active; skipping')
 
         return downloaded_subtitles
 
@@ -948,17 +982,20 @@ def _search_external_subtitles(path, languages=None, only_one=False, match_stric
         # fixme: duplicate from subtitlehelpers
         split_tag = p_root.rsplit('.', 1)
         adv_tag = None
+        is_whisperai_tag = False
         if len(split_tag) > 1:
             adv_tag = split_tag[1].lower()
-            if adv_tag in ['forced', 'normal', 'default', 'embedded', 'embedded-forced', 'custom', 'hi', 'cc', 'sdh']:
+            is_whisperai_tag = adv_tag == 'whisperai' or adv_tag.startswith('whisperai-')
+            if adv_tag in ['forced', 'normal', 'default', 'embedded', 'embedded-forced', 'custom', 'hi', 'cc', 'sdh'] \
+                    or is_whisperai_tag:
                 p_root = split_tag[0]
 
         forced = False
-        if adv_tag:
+        if adv_tag and not is_whisperai_tag:
             forced = "forced" in adv_tag
 
         hi = False
-        if adv_tag:
+        if adv_tag and not is_whisperai_tag:
             hi_tag = ["hi", "cc", "sdh"]
             hi = any(i for i in hi_tag if i in adv_tag)
 
@@ -1224,8 +1261,16 @@ def save_subtitles(file_path, subtitles, single=False, directory=None, chmod=Non
             logger.error('Skipping subtitle %r: no content', subtitle)
             continue
 
-        # check language
-        if subtitle.language in set(s.language.basename for s in saved_subtitles):
+        # per-subtitle path tags (e.g. ['whisperai', 'large-v3']) let providers route a subtitle
+        # to a distinct filename so it does not collide with another subtitle for the same language
+        per_subtitle_tags = list(getattr(subtitle, 'subtitle_path_tags', None) or [])
+        effective_tags = list(tags or []) + per_subtitle_tags
+
+        # check language (key on language + tags so a tagged subtitle does not collide with
+        # an already-saved untagged one for the same language)
+        dedup_key = (subtitle.language.basename, tuple(per_subtitle_tags))
+        if dedup_key in set((s.language.basename, tuple(getattr(s, 'subtitle_path_tags', None) or []))
+                            for s in saved_subtitles):
             logger.debug('Skipping subtitle %r: language already saved', subtitle)
             continue
 
@@ -1237,7 +1282,8 @@ def save_subtitles(file_path, subtitles, single=False, directory=None, chmod=Non
             subtitle.language.hi = True
         subtitle_path = get_subtitle_path(file_path, None if single else subtitle.language,
                                           forced_tag=subtitle.language.forced,
-                                          hi_tag=False if must_remove_hi else subtitle.language.hi, tags=tags)
+                                          hi_tag=False if must_remove_hi else subtitle.language.hi,
+                                          tags=effective_tags)
         if directory is not None:
             subtitle_path = os.path.join(directory, os.path.split(subtitle_path)[1])
 

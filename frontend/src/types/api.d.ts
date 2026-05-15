@@ -41,6 +41,7 @@ declare namespace Language {
     mustContain: string[];
     mustNotContain: string[];
     originalFormat: boolean | null;
+    alwaysUseWhisper: boolean | null;
     tag: string | undefined;
   }
 }

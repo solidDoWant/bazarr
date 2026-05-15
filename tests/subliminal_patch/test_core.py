@@ -166,3 +166,105 @@ def test_language_equals_pool_intance_list_subtitles_return_nothing(movies):
     assert not language_equals_pool_intance.download_best_subtitles(
         subs, movies["dune"], {core.Language("spa")}
     )
+
+
+def test_get_subtitle_path_with_provider_tag():
+    path = core.get_subtitle_path(
+        "/x/y.mkv", core.Language("eng"), tags=["whisperai", "large-v3"]
+    )
+    assert path == "/x/y.en.whisperai-large-v3.srt"
+
+
+def test_get_subtitle_path_with_provider_tag_no_model():
+    path = core.get_subtitle_path("/x/y.mkv", core.Language("eng"), tags=["whisperai"])
+    assert path == "/x/y.en.whisperai.srt"
+
+
+def test_search_external_subtitles_recognizes_whisperai_tag(tmpdir):
+    video_path = tmpdir.join("Some.Movie.2023.1080p.mkv")
+    video_path.ensure(file=True)
+    sub_path = tmpdir.join("Some.Movie.2023.1080p.en.whisperai-large-v3.srt")
+    sub_path.ensure(file=True)
+
+    found = core._search_external_subtitles(str(video_path))
+
+    assert sub_path.basename in found
+    assert found[sub_path.basename] == core.Language("eng")
+
+
+def test_search_external_subtitles_recognizes_whisperai_tag_no_model(tmpdir):
+    video_path = tmpdir.join("Other.Movie.2024.mkv")
+    video_path.ensure(file=True)
+    sub_path = tmpdir.join("Other.Movie.2024.en.whisperai.srt")
+    sub_path.ensure(file=True)
+
+    found = core._search_external_subtitles(str(video_path))
+
+    assert found[sub_path.basename] == core.Language("eng")
+
+
+class _FakeWhisperProvider:
+    def __init__(self):
+        self.queried = []
+
+    def list_subtitles(self, video, languages):
+        self.queried.append(set(languages))
+        return []
+
+
+def _make_whisper_pool():
+    pool = core.SZProviderPool({"whisperai"})
+    fake = _FakeWhisperProvider()
+    pool.initialized_providers["whisperai"] = fake
+    return pool, fake
+
+
+def test_pool_always_use_whisper_skips_existing(movies):
+    pool, fake = _make_whisper_pool()
+    pool.download_best_subtitles(
+        [],
+        movies["dune"],
+        {core.Language("eng")},
+        always_use_whisper=True,
+        whisper_languages_to_skip={core.Language("eng")},
+    )
+    assert fake.queried == []
+
+
+def test_pool_always_use_whisper_queries_remaining_languages(movies):
+    pool, fake = _make_whisper_pool()
+    pool.download_best_subtitles(
+        [],
+        movies["dune"],
+        {core.Language("eng"), core.Language("spa")},
+        always_use_whisper=True,
+        whisper_languages_to_skip={core.Language("eng")},
+    )
+    assert fake.queried == [{core.Language("spa")}]
+
+
+def test_pool_always_use_whisper_disabled_does_not_query(movies):
+    pool, fake = _make_whisper_pool()
+    pool.download_best_subtitles(
+        [],
+        movies["dune"],
+        {core.Language("eng")},
+        always_use_whisper=False,
+    )
+    assert fake.queried == []
+
+
+def test_pool_always_use_whisper_without_whisper_provider_is_noop(movies):
+    # whisperai not in the pool's enabled providers
+    pool = core.SZProviderPool({"opensubtitlescom"})
+    fake = _FakeWhisperProvider()
+    # even if a stale provider object exists, the pool should never reach it
+    pool.initialized_providers["whisperai"] = fake
+    result = pool.download_best_subtitles(
+        [],
+        movies["dune"],
+        {core.Language("eng")},
+        always_use_whisper=True,
+    )
+    assert result == []
+    assert fake.queried == []

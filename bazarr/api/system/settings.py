@@ -74,6 +74,8 @@ class SystemSettings(Resource):
                             originalFormat=int(item['originalFormat']) if item['originalFormat'] not in None_Keys else
                             None,
                             tag=item['tag'] if 'tag' in item else None,
+                            alwaysUseWhisper=int(item['alwaysUseWhisper']) if item.get('alwaysUseWhisper') not in
+                            None_Keys else 0,
                         )
                         .where(TableLanguagesProfiles.profileId == item['profileId']))
                     existing.remove(item['profileId'])
@@ -91,6 +93,8 @@ class SystemSettings(Resource):
                             originalFormat=int(item['originalFormat']) if item['originalFormat'] not in None_Keys else
                             None,
                             tag=item['tag'] if 'tag' in item else None,
+                            alwaysUseWhisper=int(item['alwaysUseWhisper']) if item.get('alwaysUseWhisper') not in
+                            None_Keys else 0,
                         ))
             for profileId in existing:
                 # Remove deleted profiles

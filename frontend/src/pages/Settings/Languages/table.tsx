@@ -224,6 +224,7 @@ const Table: FunctionComponent = () => {
             mustContain: [],
             mustNotContain: [],
             originalFormat: false,
+            alwaysUseWhisper: false,
           };
           modals.openContextModal(ProfileEditModal, {
             languages,

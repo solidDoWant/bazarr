@@ -235,6 +235,7 @@ class TableLanguagesProfiles(Base):
     mustContain = mapped_column(Text)
     mustNotContain = mapped_column(Text)
     tag = mapped_column(Text)
+    alwaysUseWhisper = mapped_column(Integer)
 
 
 class TableMovies(Base):
@@ -422,6 +423,7 @@ def update_profile_id_list():
         'mustNotContain': ast.literal_eval(x.mustNotContain) if x.mustNotContain else [],
         'originalFormat': x.originalFormat,
         'tag': x.tag,
+        'alwaysUseWhisper': x.alwaysUseWhisper,
     } for x in database.execute(
         select(TableLanguagesProfiles.profileId,
                TableLanguagesProfiles.name,
@@ -430,7 +432,8 @@ def update_profile_id_list():
                TableLanguagesProfiles.mustContain,
                TableLanguagesProfiles.mustNotContain,
                TableLanguagesProfiles.originalFormat,
-               TableLanguagesProfiles.tag))
+               TableLanguagesProfiles.tag,
+               TableLanguagesProfiles.alwaysUseWhisper))
         .all()
     ]
 
@@ -465,7 +468,9 @@ def get_profile_cutoff(profile_id):
     if profile_id and profile_id != 'null':
         cutoff_language = []
         for profile in profile_id_list:
-            profileId, name, cutoff, items, mustContain, mustNotContain, originalFormat, tag = profile.values()
+            profileId = profile['profileId']
+            cutoff = profile['cutoff']
+            items = profile['items']
             if cutoff:
                 if profileId == int(profile_id):
                     for item in items:

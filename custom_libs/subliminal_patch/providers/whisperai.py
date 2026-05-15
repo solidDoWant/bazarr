@@ -279,6 +279,8 @@ class WhisperAISubtitle(Subtitle):
         self.audio_language = None
         self.force_audio_stream = None
         self.matches = set()
+        self.model_name = None
+        self.subtitle_path_tags = []
 
     @property
     def id(self):
@@ -303,7 +305,8 @@ class WhisperAIProvider(Provider):
     languages = wlm.get_all_language_objects()
     video_types = (Episode, Movie)
 
-    def __init__(self, endpoint=None, response=None, timeout=None, ffmpeg_path=None, pass_video_name=None, loglevel=None):
+    def __init__(self, endpoint=None, response=None, timeout=None, ffmpeg_path=None, pass_video_name=None, loglevel=None,
+                 model_name=None):
         set_log_level(loglevel)
         if not endpoint:
             raise ConfigurationError('Whisper Web Service Endpoint must be provided')
@@ -316,7 +319,7 @@ class WhisperAIProvider(Provider):
 
         if not ffmpeg_path:
             raise ConfigurationError("ffmpeg path must be provided")
-        
+
         if pass_video_name is None:
             raise ConfigurationError('Whisper Web Service Pass Video Name option must be provided')
 
@@ -326,6 +329,10 @@ class WhisperAIProvider(Provider):
         self.session = None
         self.ffmpeg_path = ffmpeg_path
         self.pass_video_name = pass_video_name
+        # name of the Whisper model the user has configured on the ASR service
+        # (the service itself does not expose this); used as a filename tag when
+        # "Always run Whisper" is enabled on a language profile
+        self.model_name = (model_name or '').strip()
 
         # Use provided ambiguous language codes directly without fallback
         self.ambiguous_language_codes = whisper_ambiguous_language_codes
@@ -514,6 +521,7 @@ class WhisperAIProvider(Provider):
 
         sub = WhisperAISubtitle(language, video)
         sub.task = "transcribe"
+        sub.model_name = self.model_name or None
 
         # Handle undefined/no audio languages
         if not video.audio_languages:

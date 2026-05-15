@@ -352,6 +352,7 @@ validators = [
     Validator('whisperai.response', must_exist=True, default=5, is_type_of=int, gte=1),
     Validator('whisperai.timeout', must_exist=True, default=3600, is_type_of=int, gte=1),
     Validator('whisperai.pass_video_name', must_exist=True, default=False, is_type_of=bool),
+    Validator('whisperai.model_name', must_exist=True, default='', is_type_of=str, cast=str),
     Validator('whisperai.loglevel', must_exist=True, default='INFO', is_type_of=str,
               is_in=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']),
 

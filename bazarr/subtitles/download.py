@@ -8,7 +8,7 @@ import subliminal
 import ast
 
 from subzero.language import Language
-from subliminal_patch.core import save_subtitles
+from subliminal_patch.core import get_subtitle_path, save_subtitles
 from subliminal_patch.core_persistent import download_best_subtitles
 
 from app.config import settings, get_array_from
@@ -42,6 +42,7 @@ def generate_subtitles(path, languages, audio_language, sceneName, title, media_
     language_set = _get_language_obj(languages=languages)
     profile = get_profiles_list(profile_id=profile_id)
     original_format = profile['originalFormat']
+    always_use_whisper = profile.get('alwaysUseWhisper') in (1, "1", "True", True)
     hi_required = "force HI" if all([x.hi for x in language_set]) else "don't prefer"
     also_forced = any([x.forced for x in language_set])
     forced_required = all([x.forced for x in language_set])
@@ -72,6 +73,8 @@ def generate_subtitles(path, languages, audio_language, sceneName, title, media_
                                   f"has been reached during this search.")
                     continue
                 else:
+                    whisper_languages_to_skip = _whisper_languages_to_skip(path, {language}) \
+                        if always_use_whisper else None
                     try:
                         downloaded_subtitles = download_best_subtitles(videos={video},
                                                                        languages={language},
@@ -79,7 +82,9 @@ def generate_subtitles(path, languages, audio_language, sceneName, title, media_
                                                                        min_score=int(min_score),
                                                                        hearing_impaired=hi_required,
                                                                        use_original_format=original_format in (1, "1", "True", True),
-                                                                       fallback_allowed=fallback_allowed)
+                                                                       fallback_allowed=fallback_allowed,
+                                                                       always_use_whisper=always_use_whisper,
+                                                                       whisper_languages_to_skip=whisper_languages_to_skip)
                     except Exception as e:
                         logging.exception(f'BAZARR Error downloading Subtitles for this file {path}: {repr(e)}')
                         return None
@@ -176,6 +181,24 @@ def parse_language_object(language):
         return language.basename + hi + forced
     else:
         return language
+
+
+def _whisper_languages_to_skip(path, languages):
+    # build the set of languages whose Whisper-tagged file already exists on disk for the configured
+    # model, so the always-use-whisper pass can avoid re-transcribing them
+    model_name = (settings.whisperai.model_name or '').strip()
+    tags = ['whisperai']
+    if model_name:
+        tags.append(model_name)
+
+    fld = get_target_folder(path) or os.path.dirname(path)
+    skip = set()
+    for language in languages:
+        subtitle_path = get_subtitle_path(path, language, forced_tag=language.forced, hi_tag=language.hi, tags=list(tags))
+        subtitle_path = os.path.join(fld, os.path.basename(subtitle_path))
+        if os.path.exists(subtitle_path):
+            skip.add(language)
+    return skip
 
 
 def check_missing_languages(path, media_type):
